@@ -9,6 +9,9 @@ test
 .mvn
 target
 mvnw
+mvnw.cmd
+.gitignore
+HELP.md
 
 
 # Compiled class file
