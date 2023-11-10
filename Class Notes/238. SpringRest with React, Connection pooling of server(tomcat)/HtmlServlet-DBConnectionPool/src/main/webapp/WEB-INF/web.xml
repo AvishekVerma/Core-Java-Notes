@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://java.sun.com/xml/ns/javaee" xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd" id="WebApp_ID" version="2.5">
+  <display-name>HtmlServlet-DBConnectionPool</display-name>
+  <welcome-file-list>
+    <welcome-file>index.html</welcome-file>
+  </welcome-file-list>
+  
+  <context-param>
+  	<param-name>jndi</param-name>
+  	<param-value>java:comp/env/customer</param-value>
+  </context-param>
+  
+  <servlet>
+    <servlet-name>CustomerRegistrationServlet</servlet-name>
+    <servlet-class>in.ineuron.nitin.controller.CustomerRegistrationServlet</servlet-class>
+  </servlet>
+  
+  <servlet-mapping>
+    <servlet-name>CustomerRegistrationServlet</servlet-name>
+    <url-pattern>/reg</url-pattern>
+  </servlet-mapping>
+  
+</web-app>
