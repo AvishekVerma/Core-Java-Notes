@@ -1,0 +1,208 @@
+(
+  cd "$(git rev-parse --show-toplevel)"
+  git apply --3way <<'EOF'
+diff --git a/domain_parser/ast_nodes.py b/domain_parser/ast_nodes.py
+index 0cc7f9633012a54ddf22c4fbb86c9b04da83679f..d30bf626caf3e18a8921257ee428faf4858f557a 100644
+--- a/domain_parser/ast_nodes.py
++++ b/domain_parser/ast_nodes.py
+@@ -1,58 +1,132 @@
+ """AST node definitions for domain-to-SQL translation."""
+ 
+ from abc import ABC, abstractmethod
+ from dataclasses import dataclass, field
+ from typing import Any, List
+ 
++from .exceptions import (
++    ArityError,
++    DomainSyntaxError,
++    InvalidIdentifierError,
++    InvalidOperatorError,
++    RelationFieldError,
++    UnsupportedComparisonOperator,
++)
++from .sql_utils import format_sql_literal, quote_identifier
++
++
++# Set of comparison operators allowed in condition nodes.
++_COMPARISON_OPERATORS = {"=", "!=", "<", "<=", ">", ">="}
++
+ 
+ class BaseNode(ABC):
+     """Abstract base class for all AST nodes."""
+ 
+     @abstractmethod
+     def to_sql(self) -> str:
+         """Return the SQL fragment for this node."""
+         raise NotImplementedError
+ 
+ 
+ @dataclass
+ class ConditionNode(BaseNode):
+     """Represents a single field comparison.
+ 
+     Attributes:
+         field_name: Name of the field being compared.
+         operator: Comparison operator as a string.
+         value: Literal value for the comparison.
+     """
+ 
+     field_name: str
+     operator: str
+     value: Any
+ 
++    def __post_init__(self) -> None:
++        """Validate provided field name and operator."""
++
++        if not isinstance(self.field_name, str) or not self.field_name:
++            raise InvalidIdentifierError(
++                f"Field name must be a non-empty string, got {self.field_name!r}"
++            )
++        if "." in self.field_name:
++            raise RelationFieldError(
++                f"Relation field {self.field_name!r} is not supported"
++            )
++
++        if not isinstance(self.operator, str) or not self.operator:
++            raise InvalidOperatorError(
++                f"Invalid operator {self.operator!r} for field {self.field_name!r}"
++            )
++        if self.operator not in _COMPARISON_OPERATORS:
++            raise UnsupportedComparisonOperator(
++                f"Unsupported comparison operator {self.operator!r}"
++            )
++
++    @classmethod
++    def from_token(cls, condition_token: Any, position: int) -> "ConditionNode":
++        """Create a condition node from a raw domain token.
++
++        Args:
++            condition_token: The ``(field, operator, value)`` triple.
++            position: Index of the token in the domain expression.
++
++        Raises:
++            ArityError: If the token does not contain exactly three elements.
++
++        Returns:
++            A validated :class:`ConditionNode` instance.
++        """
++
++        if not (isinstance(condition_token, (list, tuple)) and len(condition_token) == 3):
++            raise ArityError(
++                "Invalid domain element at position "
++                f"{position}: expected 3-tuple, got {condition_token!r}"
++            )
++        field_name, operator_symbol, comparison_value = condition_token  # type: ignore[misc]
++        return cls(field_name, operator_symbol, comparison_value)
++
+     def to_sql(self) -> str:
+         """Render the condition into an SQL expression."""
+-        raise NotImplementedError
++
++        # Quote the field name so it is safe for SQL output.
++        quoted_field = quote_identifier(self.field_name)
++
++        sql_operator = "<>" if self.operator == "!=" else self.operator
++
++        if self.value is None:
++            if sql_operator == "=":
++                return f"{quoted_field} IS NULL"
++            if sql_operator == "<>":
++                return f"{quoted_field} IS NOT NULL"
++            raise DomainSyntaxError(
++                f"Operator {self.operator!r} cannot be used with NULL"
++            )
++
++        literal = format_sql_literal(self.value)
++        return f"{quoted_field} {sql_operator} {literal}"
+ 
+ 
+ @dataclass
+ class AndNode(BaseNode):
+     """Represents a logical ``AND`` of child nodes.
+ 
+     Attributes:
+         children: Nodes that will be combined with ``AND``.
+     """
+ 
+     children: List[BaseNode] = field(default_factory=list)
+ 
+     def to_sql(self) -> str:
+         """Combine child nodes using ``AND``."""
+         raise NotImplementedError
+ 
+ 
+ @dataclass
+ class OrNode(BaseNode):
+     """Represents a logical ``OR`` of child nodes.
+ 
+     Attributes:
+         children: Nodes that will be combined with ``OR``.
+     """
+ 
+diff --git a/tests/test_condition_node.py b/tests/test_condition_node.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..782e7199b3ea05e75be7f1859823059a474547ea
+--- /dev/null
++++ b/tests/test_condition_node.py
+@@ -0,0 +1,58 @@
++"""Tests for the :class:`ConditionNode` class."""
++
++import pytest
++
++from domain_parser.ast_nodes import ConditionNode
++from domain_parser.exceptions import (
++    DomainSyntaxError,
++    InvalidIdentifierError,
++    InvalidOperatorError,
++    UnsupportedComparisonOperator,
++)
++
++
++def test_condition_node_basic_comparison() -> None:
++    """Simple equality comparison should render correctly."""
++
++    node = ConditionNode("name", "=", "Alice")
++    assert node.to_sql() == "name = 'Alice'"
++
++
++def test_condition_node_not_equal() -> None:
++    """The ``!=`` operator should translate to ``<>``."""
++
++    node = ConditionNode("name", "!=", "Bob")
++    assert node.to_sql() == "name <> 'Bob'"
++
++
++def test_condition_node_null_comparisons() -> None:
++    """``None`` values should translate to ``IS NULL`` checks."""
++
++    null_node = ConditionNode("deleted_at", "=", None)
++    assert null_node.to_sql() == "deleted_at IS NULL"
++    not_null_node = ConditionNode("deleted_at", "!=", None)
++    assert not_null_node.to_sql() == "deleted_at IS NOT NULL"
++
++
++def test_condition_node_null_with_invalid_operator() -> None:
++    """Comparing ``None`` with non-equality operators should error."""
++
++    node = ConditionNode("deleted_at", ">", None)
++    with pytest.raises(DomainSyntaxError):
++        node.to_sql()
++
++
++def test_invalid_field_name_raises() -> None:
++    """Field names must be non-empty strings."""
++
++    with pytest.raises(InvalidIdentifierError):
++        ConditionNode("", "=", 1)
++
++
++def test_invalid_operator_raises() -> None:
++    """Operators must be non-empty and supported."""
++
++    with pytest.raises(InvalidOperatorError):
++        ConditionNode("age", "", 1)
++    with pytest.raises(UnsupportedComparisonOperator):
++        ConditionNode("age", "like", 1)
+
+EOF
+)
