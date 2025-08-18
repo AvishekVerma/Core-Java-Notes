@@ -1,0 +1,90 @@
+(
+  cd "$(git rev-parse --show-toplevel)"
+  git apply --3way <<'EOF'
+diff --git a/domain_parser/ast_nodes.py b/domain_parser/ast_nodes.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0cc7f9633012a54ddf22c4fbb86c9b04da83679f
+--- /dev/null
++++ b/domain_parser/ast_nodes.py
+@@ -0,0 +1,78 @@
++"""AST node definitions for domain-to-SQL translation."""
++
++from abc import ABC, abstractmethod
++from dataclasses import dataclass, field
++from typing import Any, List
++
++
++class BaseNode(ABC):
++    """Abstract base class for all AST nodes."""
++
++    @abstractmethod
++    def to_sql(self) -> str:
++        """Return the SQL fragment for this node."""
++        raise NotImplementedError
++
++
++@dataclass
++class ConditionNode(BaseNode):
++    """Represents a single field comparison.
++
++    Attributes:
++        field_name: Name of the field being compared.
++        operator: Comparison operator as a string.
++        value: Literal value for the comparison.
++    """
++
++    field_name: str
++    operator: str
++    value: Any
++
++    def to_sql(self) -> str:
++        """Render the condition into an SQL expression."""
++        raise NotImplementedError
++
++
++@dataclass
++class AndNode(BaseNode):
++    """Represents a logical ``AND`` of child nodes.
++
++    Attributes:
++        children: Nodes that will be combined with ``AND``.
++    """
++
++    children: List[BaseNode] = field(default_factory=list)
++
++    def to_sql(self) -> str:
++        """Combine child nodes using ``AND``."""
++        raise NotImplementedError
++
++
++@dataclass
++class OrNode(BaseNode):
++    """Represents a logical ``OR`` of child nodes.
++
++    Attributes:
++        children: Nodes that will be combined with ``OR``.
++    """
++
++    children: List[BaseNode] = field(default_factory=list)
++
++    def to_sql(self) -> str:
++        """Combine child nodes using ``OR``."""
++        raise NotImplementedError
++
++
++@dataclass
++class NotNode(BaseNode):
++    """Represents a logical ``NOT`` of a single node.
++
++    Attributes:
++        child: Node to be negated.
++    """
++
++    child: BaseNode
++
++    def to_sql(self) -> str:
++        """Negate the SQL representation of the wrapped node."""
++        raise NotImplementedError
+
+EOF
+)
