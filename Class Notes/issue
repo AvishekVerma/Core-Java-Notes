@@ -1,0 +1,91 @@
+# OOP Refactoring Plan Overview
+
+> You are an expert assistant helping to refactor a procedural domain-to-SQL translator into a clear, layered OOP design for teaching purposes. Your deliverable is a **high-level roadmap**—an overview of where the codebase is heading and why—so that students (or downstream AI agents) understand the goal before diving into individual refactoring steps.
+
+---
+
+## 1. Objective
+- **Core problem**: Translate Odoo-style “domain” filters into safe PostgreSQL queries.  
+- **Pedagogical goal**: Make the data flow and logic “read like English,” with a clear separation of concerns.
+
+## 2. High-Level Architecture
+1. **Input Normalization & Validation**  
+   - Parse raw domain (list or string) into a cleaned, validated token list.
+2. **AST Construction**  
+   - Build an object tree of node classes:
+     - `ConditionNode`  
+     - `AndNode`  
+     - `OrNode`  
+     - `NotNode`
+3. **SQL Generation**  
+   - Each node implements `to_sql()` to produce its SQL fragment.  
+   - Top-level function assembles the final query:  
+     ```python
+     where = ast_root.to_sql()
+     return f"SELECT * FROM {quote_identifier(table)} WHERE {where};"
+     ```
+4. **Low-Level Utilities**  
+   - Remain in `sql_utils.py`:  
+     - `quote_identifier()`  
+     - `format_sql_literal()`
+
+## 3. Key Benefits of OOP & Polymorphism
+- **Encapsulation**: Each class has one clear responsibility.  
+- **Polymorphic rendering**: Dispatch via `node.to_sql()` instead of a large `if/else`.  
+- **Readability**: High-level flow reads like a narrative; students can “drill down” into specific classes as needed.
+
+## 4. Scope & Complexity Controls
+- **What not to over-engineer**:  
+  - Keep validation functions as simple helpers.  
+  - Avoid creating excessive classes beyond the core four node types.
+- **Optimizations deferred**:  
+  - AST flattening of nested AND/OR.  
+  - Fine-tuned parentheses logic.  
+  _(Introduce these after the core design is in place.)_
+
+## 5. Refactoring Roadmap
+1. **Define AST Node Classes**  
+   - Stub out `BaseNode`, `ConditionNode`, `AndNode`, `OrNode`, `NotNode` with placeholder `to_sql()`.
+2. **Migrate Condition Logic**  
+   - Move existing `_parse_condition` behavior into `ConditionNode.to_sql()`, with tests.
+3. **Implement Logical Nodes**  
+   - Flesh out `AndNode`, `OrNode`, `NotNode` rendering logic, with tests.
+4. **Rewire Parser**  
+   - Update parsing functions to instantiate node objects instead of raw strings.
+5. **Clean Up & Document**  
+   - Remove legacy code, add high-level examples and docstrings.
+
+> **Each phase should be small, testable, and self-contained.**
+
+## 6. Example of Expected Outcomes
+> *This is an illustrative example of the final structure.*
+
+```python
+tokens = normalize_domain(input)
+ast    = build_ast(tokens)
+sql    = ast.to_sql()
+return f"SELECT * FROM {quote_identifier(table)} WHERE {sql};"
+
+# Suggested Module Layout
+
+domain_sql/
+├── init.py # Public API: parse → build AST → render SQL
+├── parser.py # Input coercion & token‐list validation only
+├── exceptions.py # All custom error classes
+├── ast_nodes.py # BaseNode + ConditionNode/AndNode/OrNode/NotNode with to_sql()
+├── builder.py # Recursive DomainASTBuilder.from_tokens() → AST of BaseNode
+├── sql_utils.py # Low-level quote_identifier() & format_sql_literal()
+
+perl
+Copy
+Edit
+
+- **parser.py**: Read/normalize string or list, convert tuples to lists, validate each token’s shape/type.  
+- **exceptions.py**: Define `DomainSyntaxError`, `InvalidOperatorError`, etc., so parser & builder stay clean.  
+- **ast_nodes.py**: Encapsulate each AST node with a self-contained `to_sql()` method (polymorphic rendering).  
+- **builder.py**: Recursive prefix-notation parser that builds `ConditionNode`/`AndNode`/`OrNode`/`NotNode` trees.  
+- **sql_utils.py**: Quoting and literal-format helpers kept separate from parsing & AST logic.  
+
+Your goal is only the first step:
+ Introduce AST Node Classes: Start by defining the new Node classes (ConditionNode, AndNode, OrNode, NotNode, plus BaseNode). You can place these in parser.py (if keeping them internal) or a new module if preferred. For now, just define their structures (attributes) and maybe stub out to_sql() methods that raise NotImplementedError or simply pass. This lays the groundwork without changing any logic. For example, define ConditionNode with fields and have a placeholder to_sql.
+
