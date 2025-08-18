@@ -1,0 +1,103 @@
+(
+  cd "$(git rev-parse --show-toplevel)"
+  git apply --3way <<'EOF'
+diff --git a/domain_parser/ast_nodes.py b/domain_parser/ast_nodes.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d31a8c1eff3fb608833890b5f49a898c82d82641
+--- /dev/null
++++ b/domain_parser/ast_nodes.py
+@@ -0,0 +1,91 @@
++"""AST node definitions for domain-to-SQL translation.
++
++The classes here form a minimal polymorphic tree used to render Odoo-style
++domains into SQL. Rendering logic will be implemented later; for now each node
++simply raises :class:`NotImplementedError` when :meth:`to_sql` is called.
++"""
++
++from abc import ABC, abstractmethod
++from dataclasses import dataclass, field
++from typing import Any, List
++
++
++@dataclass
++class BaseNode(ABC):
++    """Abstract base class for all AST nodes.
++
++    Subclasses must implement :meth:`to_sql` to return an SQL fragment.
++    """
++
++    @abstractmethod
++    def to_sql(self) -> str:
++        """Return the SQL fragment for this node.
++
++        Returns:
++            The SQL representation of the node.
++        """
++        raise NotImplementedError
++
++
++@dataclass
++class ConditionNode(BaseNode):
++    """Represents a single field comparison.
++
++    Attributes:
++        field_name: Name of the field being compared.
++        operator: Comparison operator applied to the field.
++        value: Literal value used in the comparison.
++    """
++
++    field_name: str
++    operator: str
++    value: Any
++
++    def to_sql(self) -> str:
++        """Convert the condition into an SQL expression."""
++        raise NotImplementedError
++
++
++@dataclass
++class AndNode(BaseNode):
++    """Represents a logical ``AND`` of child nodes.
++
++    Attributes:
++        children: Nodes to be combined with ``AND``.
++    """
++
++    children: List[BaseNode] = field(default_factory=list)
++
++    def to_sql(self) -> str:
++        """Combine child nodes using ``AND``."""
++        raise NotImplementedError
++
++
++@dataclass
++class OrNode(BaseNode):
++    """Represents a logical ``OR`` of child nodes.
++
++    Attributes:
++        children: Nodes to be combined with ``OR``.
++    """
++
++    children: List[BaseNode] = field(default_factory=list)
++
++    def to_sql(self) -> str:
++        """Combine child nodes using ``OR``."""
++        raise NotImplementedError
++
++
++@dataclass
++class NotNode(BaseNode):
++    """Represents a logical ``NOT`` of a single node.
++
++    Attributes:
++        child: Node to be negated.
++    """
++
++    child: BaseNode
++
++    def to_sql(self) -> str:
++        """Negate the SQL representation of the wrapped node."""
++        raise NotImplementedError
+
+EOF
+)
